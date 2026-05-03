@@ -5,13 +5,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-REQUIRED_COLUMNS = ("question", "table", "expected_answer")
+REQUIRED_COLUMNS = ("question", "tables", "expected_answer")
 
 
 @dataclass
 class EvalRow:
     question: str
-    table: str
+    tables: list[str]
     expected_answer: str
     line_number: int  # 1-based, including header
 
@@ -43,18 +43,22 @@ def load_csv(path: str | Path) -> list[EvalRow]:
         rows: list[EvalRow] = []
         for i, raw in enumerate(reader, start=2):
             question = (raw.get(col_map["question"]) or "").strip()
-            table = (raw.get(col_map["table"]) or "").strip()
+            tables_raw = (raw.get(col_map["tables"]) or "").strip()
             expected = (raw.get(col_map["expected_answer"]) or "").strip()
             if not question:
                 continue  # skip blank rows
-            if not table or not expected:
+            tables = [t.strip() for t in tables_raw.split("|") if t.strip()]
+            seen: set[str] = set()
+            tables = [t for t in tables if not (t in seen or seen.add(t))]
+            if not tables or not expected:
                 raise CSVLoadError(
-                    f"CSV {path} line {i}: 'table' and 'expected_answer' are required."
+                    f"CSV {path} line {i}: 'tables' (pipe-delimited, at least one) "
+                    f"and 'expected_answer' are required."
                 )
             rows.append(
                 EvalRow(
                     question=question,
-                    table=table,
+                    tables=tables,
                     expected_answer=expected,
                     line_number=i,
                 )

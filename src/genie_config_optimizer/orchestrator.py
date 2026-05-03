@@ -25,7 +25,7 @@ def _ask_result_for_judge(eval_row: EvalRow, ar: AskResult | None, error: str | 
     if error is not None:
         return {
             "question": eval_row.question,
-            "expected_table": eval_row.table,
+            "expected_tables": eval_row.tables,
             "expected_answer": eval_row.expected_answer,
             "genie_status": "ERROR",
             "genie_sql": None,
@@ -35,7 +35,7 @@ def _ask_result_for_judge(eval_row: EvalRow, ar: AskResult | None, error: str | 
         }
     return {
         "question": eval_row.question,
-        "expected_table": eval_row.table,
+        "expected_tables": eval_row.tables,
         "expected_answer": eval_row.expected_answer,
         "genie_status": ar.status if ar else "",
         "genie_sql": ar.sql if ar else None,
@@ -113,7 +113,7 @@ def run(
             {
                 "csv_line": row.line_number,
                 "question": row.question,
-                "expected_table": row.table,
+                "expected_tables": row.tables,
                 "expected_answer": row.expected_answer,
                 "genie": {
                     "status": ar.status if ar else None,
@@ -183,6 +183,9 @@ def run(
     }
     run_dir.write_meta(meta)
     print(f"  -> wrote {run_dir.path / 'meta.json'}")
+
+    run_dir.write_summary(meta)
+    print(f"  -> wrote {run_dir.path / 'summary.md'}")
 
     if update_error:
         return 4

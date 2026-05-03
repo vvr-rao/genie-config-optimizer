@@ -29,8 +29,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_run.add_argument(
         "--archive-dir",
-        default="archive",
-        help="Root directory for archive folders. Defaults to ./archive.",
+        default="optimizer_runs",
+        help="Root directory for per-run archive folders. Defaults to ./optimizer_runs.",
     )
     p_run.add_argument(
         "--limit",

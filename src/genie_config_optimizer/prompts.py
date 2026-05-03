@@ -5,6 +5,20 @@ PART 1 — JUDGE: For each evaluation row, decide whether Genie's answer matches
 expected logic described in plain English. Return a verdict of "pass", "fail", or
 "partial" with a one-paragraph reasoning.
 
+Each row carries `expected_tables` — a list of `catalog.schema.table` names the
+operator expects the answer to involve. Treat this as a hint about analytical
+scope, not a hard gate: if Genie answers correctly using a different valid table
+path, that's still a pass. Use the list to detect scope errors (e.g. Genie ignored
+a join that the question requires) but don't fail purely on table mismatch.
+
+`expected_answer` may describe complex analytical logic — conditional aggregations,
+multi-period comparisons (month-over-month, period-over-period), correlations,
+distributions and percentile summaries, sentiment / text-mining tasks, multi-table
+joins, segmentation, ratio metrics, top/bottom rankings, repeat-customer logic, or
+graceful-limitation cases (where the correct behavior is for Genie to state it
+cannot answer with the available tables and suggest alternatives). Evaluate the
+intent of the expected logic, not the exact SQL form.
+
 PART 2 — PROPOSE PATCH: Based on the failures and partials across the whole batch,
 propose a single consolidated patch to the Genie space's metadata. The patch may
 touch any of these five categories. Use the field names exactly as given.
@@ -55,6 +69,10 @@ Rules:
   - When the failure is about a missing relationship, propose a join.
   - When the failure is about Genie picking wrong filters or aggregations, propose
     a trusted query that pins the correct logic.
+  - For complex analytical patterns the operator wants Genie to nail consistently
+    (period-over-period growth, correlations, segmentation, repeat-customer
+    classification, distribution summaries), prefer trusted_queries with
+    parameterized SQL — instructions alone won't pin the right shape.
 
 Output format: A single JSON object. No prose before or after. Schema:
 

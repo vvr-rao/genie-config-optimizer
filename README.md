@@ -84,17 +84,23 @@ UTF-8, header row required. Columns:
 | Column           | Required | Description                                                                       |
 |------------------|----------|-----------------------------------------------------------------------------------|
 | `question`       | yes      | The natural-language question to send to Genie.                                    |
-| `table`          | yes      | The three-level Unity Catalog name the answer should target (`catalog.schema.table`). |
-| `expected_answer`| yes      | Plain-English description of the correct answer or SQL logic.                      |
+| `tables`         | yes      | Pipe-delimited list of one or more `catalog.schema.table` names the answer should touch. Single-table cells are valid (no pipe needed). |
+| `expected_answer`| yes      | Plain-English description of the correct answer or analytical logic. May describe simple aggregations OR complex patterns: conditional aggregations, period-over-period comparisons, correlations, distributions, sentiment / text-mining tasks, segmentation, ratio metrics, top/bottom rankings, or graceful-limitation cases (where Genie should state it cannot answer with the available tables). |
+
+The `tables` list is treated as a *hint* about analytical scope, not a hard gate — Genie answering the question correctly via a different valid table path is still a pass.
 
 Example:
 
 ```csv
-question,table,expected_answer
+question,tables,expected_answer
 "How many users signed up last week?","main.app.users","COUNT(*) on main.app.users WHERE created_at >= now() - interval 7 day"
-"Top 5 products by revenue this quarter","main.sales.orders","Sum order_total grouped by product_id over the current quarter, ordered desc, limit 5"
-"Average order size by region","main.sales.orders","AVG(order_total) joined to main.sales.customers on customer_id, grouped by region"
+"Top 5 products by revenue this quarter","main.sales.orders|main.sales.products","Sum order_total grouped by product_id over the current quarter, joined to products for the name; ordered desc, limit 5"
+"Month-over-month revenue growth by region","main.sales.orders|main.sales.customers","Group revenue by month and region, then compute MoM percentage change; rank regions by latest growth rate"
+"Correlation between price and units sold","main.sales.orders","Compute correlation between unit price and quantity; explain whether higher prices correlate with higher or lower volume"
+"Compare employee satisfaction with sales","main.sales.orders","Graceful limitation: employee satisfaction data is not in the listed tables — Genie should state it cannot answer and suggest sales/review alternatives"
 ```
+
+A larger reference evaluation set lives at [example_csv/bakehouse_genie_test_scenarios.csv](example_csv/bakehouse_genie_test_scenarios.csv) (64 rows over the Databricks `samples.bakehouse.*` tables).
 
 ---
 
@@ -121,19 +127,21 @@ uv run genie-config-optimizer run --csv questions.csv --limit 2 --dry-run
 
 ## What gets archived
 
-Every CLI invocation creates one folder under `archive/`:
+Every CLI invocation creates one timestamped subfolder under `optimizer_runs/`:
 
 ```
-archive/
-└── 2026-05-03T14-30-00Z/
-    ├── before.json   # serialized_space pulled at the start of the run
-    ├── after.json    # serialized_space after the proposed patch was applied
-    └── meta.json     # CSV inputs, Genie outputs, Claude verdicts, patch, token usage
+optimizer_runs/
+├── notes.md                       # tracked top-level notes (committed)
+└── 2026-05-03T14-30-00Z/          # per-run subfolder (gitignored)
+    ├── before.json                # serialized_space pulled at the start of the run
+    ├── after.json                 # serialized_space after the proposed patch was applied
+    ├── meta.json                  # CSV inputs, Genie outputs, Claude verdicts, patch, token usage
+    └── summary.md                 # human-readable run summary: verdicts + planned changes
 ```
 
-`meta.json` contains everything you need to reproduce or audit the run: every question, the SQL Genie returned, Claude's verdict and reasoning per row, the consolidated patch, and the Anthropic token usage.
+`meta.json` contains everything you need to reproduce or audit the run: every question, the SQL Genie returned, Claude's verdict and reasoning per row, the consolidated patch, and the Anthropic token usage. `summary.md` is the same information rendered for quick skimming.
 
-`archive/` is gitignored.
+`optimizer_runs/notes.md` is committed; every per-run subfolder is gitignored (see `.gitignore` pattern `optimizer_runs/*/`).
 
 ### Rolling back a run
 
@@ -143,7 +151,7 @@ If a patch turns out to be wrong, restore the previous configuration by `PUT`-in
 curl -X PUT "$HOST/api/2.0/genie/spaces/$SPACE_ID" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d "{\"serialized_space\": $(jq -Rs . archive/<timestamp>/before.json | jq -r .)}"
+  -d "{\"serialized_space\": $(jq -Rs . optimizer_runs/<timestamp>/before.json | jq -r .)}"
 ```
 
 ---
@@ -159,7 +167,7 @@ curl -X PUT "$HOST/api/2.0/genie/spaces/$SPACE_ID" \
 3. Single Anthropic call: Claude judges all rows AND proposes one consolidated patch
 4. apply_patch -> new serialized_space
 5. PUT /spaces/{id}                                                  (one update — skipped if --dry-run)
-6. write archive/<ISO-timestamp>/{before.json, after.json, meta.json}
+6. write optimizer_runs/<ISO-timestamp>/{before.json, after.json, meta.json, summary.md}
 ```
 
 The Genie space is **read** at step 1 and **written** once at step 5. No mutation between rows. Each row is independent, so question N's answer is not influenced by question N-1.
@@ -174,8 +182,9 @@ genie-config-optimizer/
 ├── README.md
 ├── .env.example                  # template (committed)
 ├── .config.example               # template (committed)
-├── .gitignore                    # excludes .env, .config, archive/, .venv, etc.
-├── archive/                      # gitignored; one folder per CLI run
+├── .gitignore                    # excludes .env, .config, optimizer_runs/*/, .venv, etc.
+├── example_csv/                  # sample CSVs (committed)
+├── optimizer_runs/               # per-run snapshots (notes.md committed; subfolders gitignored)
 └── src/genie_config_optimizer/
     ├── __init__.py
     ├── __main__.py               # `python -m genie_config_optimizer`
@@ -186,6 +195,6 @@ genie-config-optimizer/
     ├── anthropic_client.py       # Claude judge + patch proposer (single batch call)
     ├── prompts.py                # system / user prompt templates
     ├── patcher.py                # merges Claude's patch into serialized_space
-    ├── archiver.py               # writes archive/<timestamp>/{before,after,meta}.json
+    ├── archiver.py               # writes optimizer_runs/<timestamp>/{before,after,meta}.json + summary.md
     └── orchestrator.py           # end-to-end run
 ```

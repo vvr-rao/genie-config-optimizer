@@ -1,0 +1,16 @@
+# Copy this file to `.config` and fill in real values. The .config file is gitignored.
+# INI format, parsed by configparser.
+
+[databricks]
+# Workspace URL, including https://. No trailing slash.
+host = https://adb-1234567890123456.7.azuredatabricks.net
+
+# Numeric workspace ID (visible in the URL of any workspace page).
+workspace_id = 1234567890123456
+
+# Genie space ID. Open the Genie space in the UI; it's the long hex segment in the URL.
+genie_space_id = 01eeXXXXXXXXXXXXXXXXXXXXXXXX
+
+[anthropic]
+# Defaults to claude-sonnet-4-6 if omitted.
+model = claude-sonnet-4-6

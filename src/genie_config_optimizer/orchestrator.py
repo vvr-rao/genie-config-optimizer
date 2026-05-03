@@ -5,6 +5,8 @@ import sys
 from dataclasses import asdict
 from typing import Any
 
+from tqdm import tqdm
+
 from .anthropic_client import Judge
 from .archiver import Archive, RunDir
 from .config import AppConfig
@@ -94,38 +96,50 @@ def run(
     judge_inputs: list[dict] = []
     per_row_records: list[dict] = []
 
-    for i, row in enumerate(eval_rows, start=1):
-        print(f"[{i}/{len(eval_rows)}] {row.question[:80]!r} ...", flush=True)
-        ar: AskResult | None = None
-        error: str | None = None
-        try:
-            ar = genie.ask(space_id, row.question)
-            print(f"   status={ar.status}  sql={'yes' if ar.sql else 'no'}")
-        except GenieAPIError as e:
-            error = str(e)
-            print(f"   ERROR: {error}", file=sys.stderr)
-        except Exception as e:  # noqa: BLE001 — orchestrator logs and continues
-            error = f"{type(e).__name__}: {e}"
-            print(f"   ERROR: {error}", file=sys.stderr)
+    with tqdm(total=len(eval_rows), desc="Asking Genie", unit="row") as pbar:
+        for i, row in enumerate(eval_rows, start=1):
+            q_short = row.question[:40]
+            pbar.set_postfix({"state": "starting", "q": q_short})
+            ar: AskResult | None = None
+            error: str | None = None
+            try:
+                ar = genie.ask(
+                    space_id,
+                    row.question,
+                    on_poll=lambda status, _q=q_short: pbar.set_postfix(
+                        {"state": status, "q": _q}
+                    ),
+                )
+                tqdm.write(
+                    f"[{i}/{len(eval_rows)}] {row.question[:80]!r}  "
+                    f"status={ar.status}  sql={'yes' if ar.sql else 'no'}"
+                )
+            except GenieAPIError as e:
+                error = str(e)
+                tqdm.write(f"[{i}/{len(eval_rows)}] ERROR: {error}", file=sys.stderr)
+            except Exception as e:  # noqa: BLE001 — orchestrator logs and continues
+                error = f"{type(e).__name__}: {e}"
+                tqdm.write(f"[{i}/{len(eval_rows)}] ERROR: {error}", file=sys.stderr)
 
-        judge_inputs.append(_ask_result_for_judge(row, ar, error))
-        per_row_records.append(
-            {
-                "csv_line": row.line_number,
-                "question": row.question,
-                "expected_tables": row.tables,
-                "expected_answer": row.expected_answer,
-                "genie": {
-                    "status": ar.status if ar else None,
-                    "conversation_id": ar.conversation_id if ar else None,
-                    "message_id": ar.message_id if ar else None,
-                    "sql": ar.sql if ar else None,
-                    "text_response": ar.text_response if ar else None,
-                    "rows_sample": _trim_rows(ar.rows if ar else None),
-                },
-                "error": error,
-            }
-        )
+            judge_inputs.append(_ask_result_for_judge(row, ar, error))
+            per_row_records.append(
+                {
+                    "csv_line": row.line_number,
+                    "question": row.question,
+                    "expected_tables": row.tables,
+                    "expected_answer": row.expected_answer,
+                    "genie": {
+                        "status": ar.status if ar else None,
+                        "conversation_id": ar.conversation_id if ar else None,
+                        "message_id": ar.message_id if ar else None,
+                        "sql": ar.sql if ar else None,
+                        "text_response": ar.text_response if ar else None,
+                        "rows_sample": _trim_rows(ar.rows if ar else None),
+                    },
+                    "error": error,
+                }
+            )
+            pbar.update(1)
 
     print("Calling Claude to judge batch and propose patch...")
     batch_result = judge.judge_batch(serialized_space, judge_inputs)

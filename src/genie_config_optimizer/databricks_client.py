@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 import requests
 
@@ -89,11 +89,14 @@ class GenieClient:
         *,
         poll_interval: float = 5.0,
         max_wait: float = 600.0,
+        on_poll: Callable[[str], None] | None = None,
     ) -> dict[str, Any]:
         start = time.monotonic()
         while True:
             msg = self.get_message(space_id, conversation_id, message_id)
             status = msg.get("status", "")
+            if on_poll is not None:
+                on_poll(status)
             if status in TERMINAL_STATUSES:
                 return msg
             if time.monotonic() - start > max_wait:
@@ -109,6 +112,7 @@ class GenieClient:
         *,
         poll_interval: float = 5.0,
         max_wait: float = 600.0,
+        on_poll: Callable[[str], None] | None = None,
     ) -> AskResult:
         started = self.start_conversation(space_id, question)
         conversation_id = started["conversation_id"]
@@ -119,6 +123,7 @@ class GenieClient:
             message_id,
             poll_interval=poll_interval,
             max_wait=max_wait,
+            on_poll=on_poll,
         )
 
         sql: str | None = None

@@ -182,19 +182,56 @@ curl -X PATCH "$HOST/api/2.0/genie/spaces/$SPACE_ID" \
 
 ## How the run works
 
-```
-1. GET  /api/2.0/genie/spaces/{id}?include_serialized_space=true   (snapshot once)
-2. for each CSV row:
-       POST /spaces/{id}/start-conversation                          (one fresh conversation)
-       poll messages until COMPLETED / FAILED / CANCELLED            (5 s interval, 10 min cap)
-       GET attachment query-result                                   (capture SQL + result rows)
-3. Single Anthropic call: Claude judges all rows AND proposes one consolidated patch
-4. apply_patch -> new serialized_space
-5. PATCH /spaces/{id}                                                (one update — skipped if --dry-run)
-6. write optimizer_runs/<ISO-timestamp>/{before.json, after.json, meta.json, summary.md}
+```mermaid
+flowchart TD
+    csv[("questions.csv<br/>question, tables, expected_answer")] --> load[Load &amp; validate rows]
+    load --> get["GET /api/2.0/genie/spaces/{id}<br/>?include_serialized_space=true"]
+    get --> before[(before.json archived)]
+
+    get --> loop["For each CSV row:<br/>POST start-conversation<br/>poll messages every 5s<br/>GET attachment query-result"]
+    loop --> capture[Collect SQL + result rows<br/>across all rows]
+
+    capture --> claude["Anthropic API — single batched call<br/>Claude judges every row<br/>+ proposes ONE consolidated patch"]
+    claude --> apply[apply_patch locally<br/>5 metadata categories]
+    apply --> after[(after.json archived)]
+
+    apply --> patch["PATCH /api/2.0/genie/spaces/{id}<br/>body: serialized_space JSON<br/>one update, after the full batch"]
+    patch --> done([Genie space updated])
+
+    claude --> meta[(meta.json + summary.md<br/>verdicts, patch, token usage)]
 ```
 
+Step by step:
+
+1. `GET /api/2.0/genie/spaces/{id}?include_serialized_space=true` — snapshot the current space once.
+2. For each CSV row:
+   - `POST /spaces/{id}/start-conversation` — fresh conversation per row.
+   - Poll messages every 5 seconds (max 10 min per question) until status is `COMPLETED` / `FAILED` / `CANCELLED`.
+   - `GET attachment query-result` — capture SQL + result rows.
+3. Single Anthropic call: Claude judges all rows AND proposes one consolidated patch.
+4. `apply_patch` → new `serialized_space`.
+5. `PATCH /spaces/{id}` — one update, skipped if `--dry-run`.
+6. Write `optimizer_runs/<ISO-timestamp>/{before.json, after.json, meta.json, summary.md}`.
+
 The Genie space is **read** at step 1 and **written** once at step 5. No mutation between rows. Each row is independent, so question N's answer is not influenced by question N-1.
+
+---
+
+## API compatibility
+
+This tool was built and verified end-to-end against the Databricks Genie API:
+
+| Endpoint | Used for |
+|---|---|
+| `GET /api/2.0/genie/spaces/{id}?include_serialized_space=true` | Fetch the current space configuration before each run. |
+| `POST /api/2.0/genie/spaces/{id}/start-conversation` | Open a fresh conversation for each CSV question. |
+| `GET /api/2.0/genie/spaces/{id}/conversations/{conv}/messages/{msg}` | Poll message status (5 s interval). |
+| `GET /api/2.0/genie/spaces/{id}/conversations/{conv}/messages/{msg}/attachments/{att}/query-result` | Capture SQL + result rows. |
+| `PATCH /api/2.0/genie/spaces/{id}` | Apply the consolidated patch (body: `{"serialized_space": "<json>"}`). The older `PUT` shape is **not** exposed by Databricks for Genie spaces. |
+
+The patcher targets **`serialized_space` schema version 2** and writes to v2-specific paths: `instructions.text_instructions[]`, `instructions.example_question_sqls[]`, `config.sample_questions[]`, and `data_sources.tables[].column_configs[]` (with `column_name` as the column identifier and `description: list[str]`). The schema also has known constraints — `text_instructions` accepts at most one entry (rules go inside its `content: list[str]`), `example_question_sqls` only accepts `{id, question, sql}`, and the id-keyed lists must be sorted by `id` before sending — all of which `patcher.py` enforces.
+
+Last verified against a live Databricks workspace on 2026-05-04. If Databricks ships a v3 schema or changes any of the constraints above, the PATCH will return a 400 with a one-line description of the offending field, the orchestrator will exit with code 4, and the Genie space will stay untouched (`PATCH` is atomic). The full request/response is archived under `optimizer_runs/<timestamp>/meta.json`, and [src/genie_config_optimizer/patcher.py](src/genie_config_optimizer/patcher.py) is the single place where v2-specific paths and shapes are encoded.
 
 ---
 
@@ -220,5 +257,5 @@ genie-config-optimizer/
     ├── prompts.py                # system / user prompt templates
     ├── patcher.py                # merges Claude's patch into serialized_space
     ├── archiver.py               # writes optimizer_runs/<timestamp>/{before,after,meta}.json + summary.md
-    └── orchestrator.py           # end-to-end run
+    └── orchestrator.py           # last-mile run + per-row archive
 ```

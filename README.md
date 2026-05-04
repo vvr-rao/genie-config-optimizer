@@ -257,5 +257,5 @@ genie-config-optimizer/
     ├── prompts.py                # system / user prompt templates
     ├── patcher.py                # merges Claude's patch into serialized_space
     ├── archiver.py               # writes optimizer_runs/<timestamp>/{before,after,meta}.json + summary.md
-    └── orchestrator.py           # last-mile run + per-row archive
+    └── orchestrator.py           # end-to-end run
 ```

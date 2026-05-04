@@ -90,20 +90,26 @@ def _as_string_list(s: Any) -> list[str]:
 
 
 def _append_instructions(space: dict, instructions: list[str]) -> None:
+    # text_instructions is constrained to at most ONE entry. All rules live as
+    # individual bullet strings inside that single entry's `content` list, so
+    # we append new bullets to the existing entry rather than creating new ones.
     inst = _ensure(space, "instructions", {})
     arr = _ensure(inst, "text_instructions", [])
-    seen: set[str] = set()
-    for entry in arr:
-        if isinstance(entry, dict):
-            for s in _as_string_list(entry.get("content")):
-                seen.add(s.strip())
+    if arr and isinstance(arr[0], dict):
+        target = arr[0]
+    else:
+        target = {"id": _new_id(), "content": []}
+        arr.clear()
+        arr.append(target)
+    content = _ensure(target, "content", [])
+    seen = {s.strip() for s in content if isinstance(s, str)}
     for instr in instructions:
         if not isinstance(instr, str):
             continue
         text = instr.strip()
         if not text or text in seen:
             continue
-        arr.append({"id": _new_id(), "content": [instr]})
+        content.append(instr if instr.endswith("\n") else instr + "\n")
         seen.add(text)
 
 

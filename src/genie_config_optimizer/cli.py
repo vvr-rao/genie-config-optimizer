@@ -5,7 +5,7 @@ import sys
 
 from . import __version__
 from .config import ConfigError, load_config
-from .orchestrator import run
+from .orchestrator import run, run_rollback
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -20,8 +20,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    p_run = sub.add_parser("run", help="Run the optimizer over a CSV.")
-    p_run.add_argument("--csv", required=True, help="Path to the evaluation CSV.")
+    p_run = sub.add_parser("run", help="Run the optimizer over a CSV, or roll back to a prior snapshot.")
+    mode = p_run.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--csv", help="Path to the evaluation CSV (normal optimization run).")
+    mode.add_argument(
+        "--rollback",
+        metavar="FOLDER",
+        help=(
+            "Path to a previous run folder containing before.json. Restores the "
+            "Genie space to that snapshot via PATCH and archives a new run dir "
+            "with the pre-rollback state as before.json and the restored state "
+            "as after.json. Mutually exclusive with --csv."
+        ),
+    )
     p_run.add_argument(
         "--space-id",
         default=None,
@@ -41,7 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument(
         "--dry-run",
         action="store_true",
-        help="Skip the PUT /spaces/{id} call. Still writes before.json/after.json/meta.json.",
+        help="Skip the PATCH /spaces/{id} call. Still writes before.json/after.json/meta.json/summary.md.",
     )
     p_run.add_argument(
         "--env",
@@ -67,6 +78,15 @@ def main(argv: list[str] | None = None) -> int:
         except ConfigError as e:
             print(f"Config error: {e}", file=sys.stderr)
             return 2
+
+        if args.rollback:
+            return run_rollback(
+                cfg,
+                rollback_folder=args.rollback,
+                space_id_override=args.space_id,
+                archive_dir=args.archive_dir,
+                dry_run=args.dry_run,
+            )
 
         return run(
             cfg,

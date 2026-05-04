@@ -57,7 +57,7 @@ class GenieClient:
         return self._request("GET", f"/api/2.0/genie/spaces/{space_id}", params=params)
 
     def update_space(self, space_id: str, body: dict[str, Any]) -> dict[str, Any]:
-        return self._request("PUT", f"/api/2.0/genie/spaces/{space_id}", data=json.dumps(body))
+        return self._request("PATCH", f"/api/2.0/genie/spaces/{space_id}", data=json.dumps(body))
 
     def start_conversation(self, space_id: str, content: str) -> dict[str, Any]:
         return self._request(

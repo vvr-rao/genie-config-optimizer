@@ -51,15 +51,20 @@ def _truncate(text: Any, limit: int = 200) -> str:
 
 
 def _render_summary_md(meta: dict[str, Any], run_name: str) -> str:
+    is_rollback = meta.get("mode") == "rollback"
     lines: list[str] = []
-    lines.append(f"# Genie optimizer run — `{run_name}`")
+    title = "Genie rollback" if is_rollback else "Genie optimizer run"
+    lines.append(f"# {title} — `{run_name}`")
     lines.append("")
     lines.append("## Run metadata")
     lines.append("")
     lines.append(f"- Space ID: `{meta.get('space_id')}`")
     lines.append(f"- Host: `{meta.get('host')}`")
-    lines.append(f"- CSV: `{meta.get('csv_path')}`")
-    lines.append(f"- Rows processed: {meta.get('row_count')}")
+    if is_rollback:
+        lines.append(f"- Rollback source: `{meta.get('rollback_source')}`")
+    else:
+        lines.append(f"- CSV: `{meta.get('csv_path')}`")
+        lines.append(f"- Rows processed: {meta.get('row_count')}")
     lines.append(f"- Model: `{meta.get('model')}`")
     lines.append(f"- Dry run: {meta.get('dry_run')}")
     skipped = meta.get("update_skipped_reason")
@@ -73,6 +78,24 @@ def _render_summary_md(meta: dict[str, Any], run_name: str) -> str:
     else:
         outcome = "unknown"
     lines.append(f"- Update outcome: {outcome}")
+
+    vc = meta.get("verdict_counts") or {}
+    if vc:
+        counts = vc.get("counts") or {}
+        pct = vc.get("percentages") or {}
+        total = vc.get("total") or 0
+        lines.append("")
+        lines.append("## Verdict breakdown")
+        lines.append("")
+        lines.append("| Verdict | Count | Percentage |")
+        lines.append("|---------|-------|------------|")
+        for k in ("pass", "partial", "fail"):
+            c = counts.get(k, 0)
+            p = pct.get(k, 0.0)
+            lines.append(f"| {k} | {c} | {p:.1f}% |")
+        if vc.get("other"):
+            lines.append(f"| other | {vc['other']} | — |")
+        lines.append(f"| **total** | **{total}** | **100.0%** |")
 
     lines.append("")
     lines.append("## Verdicts")

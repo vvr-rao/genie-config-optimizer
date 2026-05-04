@@ -107,11 +107,11 @@ A larger reference evaluation set lives at [example_csv/bakehouse_genie_test_sce
 ## Usage
 
 ```bash
-# Real run: ask all rows, then PUT one consolidated patch
+# Real run: ask all rows, then PATCH one consolidated patch to the Genie space
 uv run genie-config-optimizer run --csv path/to/questions.csv
 
-# Dry run: ask all rows, judge, write before.json + proposed after.json + meta.json,
-# but skip the PUT to Databricks. Recommended for the first run.
+# Dry run: ask all rows, judge, write before.json + proposed after.json + meta.json
+# + summary.md, but skip the PATCH to Databricks. Recommended for the first run.
 uv run genie-config-optimizer run --csv path/to/questions.csv --dry-run
 
 # Override the space ID from .config
@@ -119,9 +119,26 @@ uv run genie-config-optimizer run --csv questions.csv --space-id 01eeXXXX...
 
 # Smoke-test on the first 2 rows only
 uv run genie-config-optimizer run --csv questions.csv --limit 2 --dry-run
+
+# Roll back the Genie space to a prior snapshot (a previous run folder).
+# Mutually exclusive with --csv. Reads <folder>/before.json and PATCHes it back.
+uv run genie-config-optimizer run --rollback optimizer_runs/2026-05-03T19-07-51Z
+
+# Dry-run the rollback (write archive but skip the PATCH)
+uv run genie-config-optimizer run --rollback optimizer_runs/2026-05-03T19-07-51Z --dry-run
 ```
 
 `--help` lists every flag.
+
+The Update Space call uses `PATCH /api/2.0/genie/spaces/{space_id}` with body `{"serialized_space": "<json>"}` — only the field being changed. Earlier versions used `PUT`, which Databricks does not expose for Genie spaces.
+
+After judging, the run prints a verdict breakdown line so you can see at a glance how Genie did:
+
+```
+  -> verdict breakdown: 63 rows: 40 pass (63.5%), 14 partial (22.2%), 9 fail (14.3%)
+```
+
+The same counts and percentages appear at the top of `summary.md` as a `## Verdict breakdown` table, and live in `meta.json` under `verdict_counts`.
 
 ---
 
@@ -145,10 +162,18 @@ optimizer_runs/
 
 ### Rolling back a run
 
-If a patch turns out to be wrong, restore the previous configuration by `PUT`-ing the run's `before.json` back to the Update Space endpoint. Until that's wired into the CLI, the simplest path is `curl`:
+If a patch turns out to be wrong, restore the previous configuration with the built-in rollback flag:
 
 ```bash
-curl -X PUT "$HOST/api/2.0/genie/spaces/$SPACE_ID" \
+uv run genie-config-optimizer run --rollback optimizer_runs/<timestamp>
+```
+
+This reads `optimizer_runs/<timestamp>/before.json`, snapshots the current space as `before.json` in a new timestamped run folder, and PATCHes the loaded JSON back as `serialized_space`. The new folder's `after.json` is the restored snapshot — so the rollback is itself reversible by pointing at the new folder.
+
+Manual fallback via `curl` (if you ever need to bypass the CLI):
+
+```bash
+curl -X PATCH "$HOST/api/2.0/genie/spaces/$SPACE_ID" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d "{\"serialized_space\": $(jq -Rs . optimizer_runs/<timestamp>/before.json | jq -r .)}"
@@ -166,7 +191,7 @@ curl -X PUT "$HOST/api/2.0/genie/spaces/$SPACE_ID" \
        GET attachment query-result                                   (capture SQL + result rows)
 3. Single Anthropic call: Claude judges all rows AND proposes one consolidated patch
 4. apply_patch -> new serialized_space
-5. PUT /spaces/{id}                                                  (one update — skipped if --dry-run)
+5. PATCH /spaces/{id}                                                (one update — skipped if --dry-run)
 6. write optimizer_runs/<ISO-timestamp>/{before.json, after.json, meta.json, summary.md}
 ```
 

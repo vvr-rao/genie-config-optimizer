@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from tqdm import tqdm
@@ -13,6 +14,33 @@ from .config import AppConfig
 from .csv_loader import EvalRow, load_csv
 from .databricks_client import AskResult, GenieAPIError, GenieClient
 from .patcher import apply_patch, patch_summary
+
+
+_KNOWN_VERDICTS = ("pass", "partial", "fail")
+
+
+def _tally_verdicts(verdicts: list) -> dict[str, Any]:
+    counts = {v: 0 for v in _KNOWN_VERDICTS}
+    other = 0
+    for v in verdicts:
+        key = (getattr(v, "verdict", "") or "").strip().lower()
+        if key in counts:
+            counts[key] += 1
+        else:
+            other += 1
+    total = sum(counts.values()) + other
+    pct = {k: (counts[k] / total * 100.0 if total else 0.0) for k in counts}
+    return {"counts": counts, "other": other, "total": total, "percentages": pct}
+
+
+def _format_verdict_counts(vc: dict[str, Any]) -> str:
+    counts = vc["counts"]
+    pct = vc["percentages"]
+    total = vc["total"]
+    parts = [f"{counts[k]} {k} ({pct[k]:.1f}%)" for k in _KNOWN_VERDICTS]
+    if vc["other"]:
+        parts.append(f"{vc['other']} other")
+    return f"{total} rows: " + ", ".join(parts)
 
 
 def _trim_rows(rows: list[list[Any]] | None, limit: int = 50) -> list[list[Any]] | None:
@@ -149,6 +177,9 @@ def run(
     )
     print(f"  -> token usage: {batch_result.usage}")
 
+    verdict_counts = _tally_verdicts(batch_result.verdicts)
+    print(f"  -> verdict breakdown: {_format_verdict_counts(verdict_counts)}")
+
     summary = patch_summary(batch_result.patch)
     print(f"  -> patch summary: {summary}")
 
@@ -162,17 +193,14 @@ def run(
 
     if dry_run:
         update_skipped_reason = "dry_run"
-        print("Dry run: skipping PUT /spaces/{id}.")
+        print("Dry run: skipping PATCH /spaces/{id}.")
     elif new_space == serialized_space:
         update_skipped_reason = "no_changes_proposed"
-        print("No changes proposed. Skipping PUT.")
+        print("No changes proposed. Skipping PATCH.")
     else:
-        print("Applying patch via PUT /spaces/{id}...")
+        print("Applying patch via PATCH /spaces/{id}...")
         try:
-            body = {**space_response, "serialized_space": json.dumps(new_space)}
-            # Strip read-only fields that some workspaces reject on PUT.
-            for ro in ("created_at", "updated_at", "creator_user_id"):
-                body.pop(ro, None)
+            body = {"serialized_space": json.dumps(new_space)}
             update_response = genie.update_space(space_id, body)
             print("  -> update OK")
         except GenieAPIError as e:
@@ -187,9 +215,117 @@ def run(
         "model": config.anthropic_model,
         "rows": per_row_records,
         "verdicts": [asdict(v) for v in batch_result.verdicts],
+        "verdict_counts": verdict_counts,
         "patch": batch_result.patch,
         "patch_summary": summary,
         "claude_usage": batch_result.usage,
+        "dry_run": dry_run,
+        "update_skipped_reason": update_skipped_reason,
+        "update_response": update_response,
+        "update_error": update_error,
+    }
+    run_dir.write_meta(meta)
+    print(f"  -> wrote {run_dir.path / 'meta.json'}")
+
+    run_dir.write_summary(meta)
+    print(f"  -> wrote {run_dir.path / 'summary.md'}")
+
+    if update_error:
+        return 4
+    return 0
+
+
+def run_rollback(
+    config: AppConfig,
+    rollback_folder: str,
+    *,
+    space_id_override: str | None = None,
+    archive_dir: str = "optimizer_runs",
+    dry_run: bool = False,
+) -> int:
+    space_id = space_id_override or config.genie_space_id
+    if not space_id:
+        print(
+            "ERROR: no Genie space ID provided (set in .config or pass --space-id)",
+            file=sys.stderr,
+        )
+        return 2
+
+    src = Path(rollback_folder)
+    before_path = src / "before.json"
+    if not before_path.exists():
+        print(f"ERROR: {before_path} does not exist", file=sys.stderr)
+        return 2
+
+    try:
+        target_space = json.loads(before_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        print(f"ERROR: {before_path} is not valid JSON: {e}", file=sys.stderr)
+        return 2
+
+    print(f"Rolling back Genie space {space_id} to snapshot at {before_path}")
+    print(f"Target Genie space: {space_id} on {config.databricks_host}")
+
+    archive = Archive(archive_dir)
+    run_dir: RunDir = archive.new_run()
+    print(f"Archive directory: {run_dir.path}")
+
+    genie = GenieClient(config.databricks_host, config.databricks_token)
+
+    print("Fetching current space configuration (pre-rollback snapshot)...")
+    space_response = genie.get_space(space_id, include_serialized=True)
+    raw = space_response.get("serialized_space")
+    if isinstance(raw, str):
+        current_space = json.loads(raw)
+    elif isinstance(raw, dict):
+        current_space = raw
+    else:
+        print(
+            "ERROR: response did not include serialized_space. "
+            f"Got keys: {list(space_response.keys())}",
+            file=sys.stderr,
+        )
+        return 3
+
+    run_dir.write_before(current_space)
+    print(f"  -> wrote {run_dir.path / 'before.json'}")
+
+    run_dir.write_after(target_space)
+    print(f"  -> wrote {run_dir.path / 'after.json'}")
+
+    update_response: dict | None = None
+    update_error: str | None = None
+    update_skipped_reason: str | None = None
+
+    if dry_run:
+        update_skipped_reason = "dry_run"
+        print("Dry run: skipping PATCH /spaces/{id}.")
+    elif current_space == target_space:
+        update_skipped_reason = "no_changes_needed"
+        print("Current space already matches the snapshot. Skipping PATCH.")
+    else:
+        print("Applying rollback via PATCH /spaces/{id}...")
+        try:
+            body = {"serialized_space": json.dumps(target_space)}
+            update_response = genie.update_space(space_id, body)
+            print("  -> rollback applied")
+        except GenieAPIError as e:
+            update_error = str(e)
+            print(f"  ERROR applying rollback: {update_error}", file=sys.stderr)
+
+    meta = {
+        "mode": "rollback",
+        "rollback_source": str(src),
+        "rollback_source_before_json": str(before_path),
+        "space_id": space_id,
+        "host": config.databricks_host,
+        "model": config.anthropic_model,
+        "row_count": 0,
+        "rows": [],
+        "verdicts": [],
+        "patch": {},
+        "patch_summary": {},
+        "claude_usage": {},
         "dry_run": dry_run,
         "update_skipped_reason": update_skipped_reason,
         "update_response": update_response,

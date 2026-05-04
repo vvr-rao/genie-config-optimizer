@@ -25,29 +25,25 @@ touch any of these five categories. Use the field names exactly as given.
 
   - "instructions": list[str]
         Plain-English instruction strings to APPEND to the space's
-        structured_instructions.text_instructions[]. Use this to teach Genie about
-        domain rules, business logic, or framing it currently misses.
+        instructions.text_instructions[]. Use this to teach Genie about
+        domain rules, business logic, framing it currently misses, or which
+        columns to use when joining specific tables.
 
   - "table_descriptions": dict[str, str]
-        Map of "catalog.schema.table" -> new description. Replaces the existing
-        description on data_sources.tables[].description for the matching identifier.
+        Map of "catalog.schema.table" -> new description. Sets
+        data_sources.tables[].description for the matching table identifier.
 
   - "column_descriptions": dict[str, dict[str, str]]
-        Map of "catalog.schema.table" -> {column_name: description}. Replaces the
-        description on data_sources.tables[].column_configs[] with matching name.
-
-  - "joins": list[dict]
-        Each dict is one new relationship to APPEND to data_sources.relationships[].
-        Required keys per dict:
-            "from_table": "catalog.schema.table"
-            "from_column": "col_name"
-            "to_table":   "catalog.schema.table"
-            "to_column":  "col_name"
-            "type":       "foreign_key" | "primary_key" | "many_to_one" | "one_to_one"
-        Optional: "description": str
+        Map of "catalog.schema.table" -> {column_name: description}. Sets
+        data_sources.tables[].column_configs[].description for the matching
+        column. The patcher writes column_name (not name) and the description
+        is stored as a list[str] internally — you provide a single string per
+        column and the patcher wraps it.
 
   - "suggested_queries": list[dict]
-        Each dict has "question": str. APPENDED to sample_questions[].
+        Each dict has "question": str. APPENDED to config.sample_questions[]
+        (each entry stored as {id, question: [str]}; the patcher generates
+        ids and wraps the string).
 
   - "trusted_queries": list[dict]
         Parameterized example_question_sqls. Each dict requires:
@@ -55,18 +51,25 @@ touch any of these five categories. Use the field names exactly as given.
             "sql":      str (parameterized SQL — use named parameters where
                             appropriate so the query is reusable)
         Optional: "description": str, "usage_guidance": str. APPENDED to
-        structured_instructions.example_question_sqls[].
+        instructions.example_question_sqls[].
+
+The Genie space schema does NOT have a first-class "joins" / relationships
+category. If a failure is about a missing or wrong join, express it either as
+an instruction ("When joining sales_transactions to sales_franchises, use
+franchiseID as the join key") OR as a trusted_query whose SQL contains the
+join shape with parameterized predicates. Do not propose a "joins" category.
 
 Rules:
   - Omit a category from "patch" entirely if you have no proposal for it. Do not
     include empty lists or empty dicts.
-  - Do not propose changes outside these five categories. Anything you put under a
-    different key will be silently dropped.
-  - Be precise. Every proposed change should be traceable to a specific failure or
-    partial in the batch.
+  - Do not propose changes outside the five categories above. Anything you put
+    under a different key will be silently dropped.
+  - Be precise. Every proposed change should be traceable to a specific failure
+    or partial in the batch.
   - When the failure is about ambiguity ("Genie didn't know which column to use"),
     prefer column descriptions or trusted queries over plain instructions.
-  - When the failure is about a missing relationship, propose a join.
+  - When the failure is about a missing relationship between tables, express it
+    as an instruction or trusted_query (see above).
   - When the failure is about Genie picking wrong filters or aggregations, propose
     a trusted query that pins the correct logic.
   - For complex analytical patterns the operator wants Genie to nail consistently
@@ -89,7 +92,6 @@ Output format: A single JSON object. No prose before or after. Schema:
     "instructions": [...],
     "table_descriptions": {...},
     "column_descriptions": {...},
-    "joins": [...],
     "suggested_queries": [...],
     "trusted_queries": [...]
   }

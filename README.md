@@ -6,16 +6,15 @@ You give it a CSV of evaluation questions with the table they should hit and a p
 
 **One Genie space update per CLI run, after every CSV row has been asked.**
 
-The tool can change five categories of Genie space metadata:
+The tool can change five categories of Genie space metadata (paths target the v2 `serialized_space` schema):
 
-- Instructions (`structured_instructions.text_instructions[]`)
+- Instructions (`instructions.text_instructions[]`)
 - Table descriptions (`data_sources.tables[].description`)
-- Column descriptions (`data_sources.tables[].column_configs[].description`)
-- Joins / relationships (`data_sources.relationships[]`)
-- Suggested queries (`sample_questions[]`)
-- Trusted queries / parameterized examples (`structured_instructions.example_question_sqls[]`)
+- Column descriptions (`data_sources.tables[].column_configs[].description`, with `column_name` as the column identifier)
+- Suggested queries (`config.sample_questions[]`)
+- Trusted queries / parameterized examples (`instructions.example_question_sqls[]`)
 
-It will not touch anything outside that list.
+The v2 schema has no first-class joins/relationships category, so join knowledge is expressed as either an instruction ("when joining X to Y, use column Z") or as a trusted query whose SQL contains the join shape. The tool will not touch anything outside the five categories above.
 
 ---
 

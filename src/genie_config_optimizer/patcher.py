@@ -51,7 +51,23 @@ def apply_patch(serialized_space: dict[str, Any], patch: dict[str, Any]) -> dict
     if trusted := patch.get("trusted_queries"):
         _append_trusted_queries(space, trusted)
 
+    _finalize_sort(space)
     return space
+
+
+def _finalize_sort(space: dict) -> None:
+    """The API requires id-keyed arrays to be sorted by id. Apply that here."""
+    inst = space.get("instructions")
+    if isinstance(inst, dict):
+        for key in ("text_instructions", "example_question_sqls"):
+            arr = inst.get(key)
+            if isinstance(arr, list):
+                arr.sort(key=lambda x: x.get("id", "") if isinstance(x, dict) else "")
+    cfg = space.get("config")
+    if isinstance(cfg, dict):
+        arr = cfg.get("sample_questions")
+        if isinstance(arr, list):
+            arr.sort(key=lambda x: x.get("id", "") if isinstance(x, dict) else "")
 
 
 def _ensure(d: dict, key: str, default):

@@ -177,14 +177,13 @@ def _append_trusted_queries(space: dict, trusted: list[dict]) -> None:
         key = (question.strip(), sql.strip())
         if key in seen:
             continue
+        # ExampleQuestionSql proto only accepts id, question, sql.
+        # description / usage_guidance are not valid fields there.
         entry: dict[str, Any] = {
             "id": _new_id(),
             "question": [question],
             "sql": [sql],
         }
-        for opt in ("description", "usage_guidance"):
-            if isinstance(t.get(opt), str) and t[opt].strip():
-                entry[opt] = [t[opt]]
         arr.append(entry)
         seen.add(key)
 

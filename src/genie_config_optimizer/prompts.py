@@ -46,12 +46,14 @@ touch any of these five categories. Use the field names exactly as given.
         ids and wraps the string).
 
   - "trusted_queries": list[dict]
-        Parameterized example_question_sqls. Each dict requires:
+        Parameterized example_question_sqls. Each dict requires only:
             "question": str
             "sql":      str (parameterized SQL — use named parameters where
                             appropriate so the query is reusable)
-        Optional: "description": str, "usage_guidance": str. APPENDED to
-        instructions.example_question_sqls[].
+        APPENDED to instructions.example_question_sqls[]. Do NOT include
+        "description", "usage_guidance", or any other fields — the schema
+        only accepts {id, question, sql} and additional fields will cause
+        the PATCH to be rejected.
 
 The Genie space schema does NOT have a first-class "joins" / relationships
 category. If a failure is about a missing or wrong join, express it either as

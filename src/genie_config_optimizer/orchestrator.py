@@ -19,6 +19,22 @@ from .patcher import apply_patch, patch_summary
 _KNOWN_VERDICTS = ("pass", "partial", "fail")
 
 
+_CONFIRM_MESSAGE = (
+    "\n*** WARNING *** - you are about to overwrite the configuration in "
+    "your Genie space. Please review the Summary of the proposed changes "
+    "before proceeding. Do you want to proceed (Y/n)? "
+)
+
+
+def _confirm_apply() -> bool:
+    """Strict prompt: returns True only if the user enters exactly 'Y'."""
+    try:
+        answer = input(_CONFIRM_MESSAGE)
+    except EOFError:
+        return False
+    return answer.strip() == "Y"
+
+
 def _tally_verdicts(verdicts: list) -> dict[str, Any]:
     counts = {v: 0 for v in _KNOWN_VERDICTS}
     other = 0
@@ -187,27 +203,10 @@ def run(
     run_dir.write_after(new_space)
     print(f"  -> wrote {run_dir.path / 'after.json'}")
 
-    update_response: dict | None = None
-    update_error: str | None = None
-    update_skipped_reason: str | None = None
-
-    if dry_run:
-        update_skipped_reason = "dry_run"
-        print("Dry run: skipping PATCH /spaces/{id}.")
-    elif new_space == serialized_space:
-        update_skipped_reason = "no_changes_proposed"
-        print("No changes proposed. Skipping PATCH.")
-    else:
-        print("Applying patch via PATCH /spaces/{id}...")
-        try:
-            body = {"serialized_space": json.dumps(new_space)}
-            update_response = genie.update_space(space_id, body)
-            print("  -> update OK")
-        except GenieAPIError as e:
-            update_error = str(e)
-            print(f"  ERROR applying update: {update_error}", file=sys.stderr)
-
-    meta = {
+    # Write summary.md BEFORE prompting so the user has something to review.
+    # update_skipped_reason is filled in below once the user decides; the
+    # final write at the end of this function reflects the actual outcome.
+    interim_meta: dict[str, Any] = {
         "space_id": space_id,
         "host": config.databricks_host,
         "csv_path": str(csv_path),
@@ -220,6 +219,38 @@ def run(
         "patch_summary": summary,
         "claude_usage": batch_result.usage,
         "dry_run": dry_run,
+        "update_skipped_reason": "pending_user_confirmation",
+        "update_response": None,
+        "update_error": None,
+    }
+    run_dir.write_summary(interim_meta)
+    print(f"  -> wrote {run_dir.path / 'summary.md'} (review before proceeding)")
+
+    update_response: dict | None = None
+    update_error: str | None = None
+    update_skipped_reason: str | None = None
+
+    if dry_run:
+        update_skipped_reason = "dry_run"
+        print("Dry run: skipping PATCH /spaces/{id}.")
+    elif new_space == serialized_space:
+        update_skipped_reason = "no_changes_proposed"
+        print("No changes proposed. Skipping PATCH.")
+    elif not _confirm_apply():
+        update_skipped_reason = "user_declined"
+        print("User declined. Skipping PATCH.")
+    else:
+        print("Applying patch via PATCH /spaces/{id}...")
+        try:
+            body = {"serialized_space": json.dumps(new_space)}
+            update_response = genie.update_space(space_id, body)
+            print("  -> update OK")
+        except GenieAPIError as e:
+            update_error = str(e)
+            print(f"  ERROR applying update: {update_error}", file=sys.stderr)
+
+    meta = {
+        **interim_meta,
         "update_skipped_reason": update_skipped_reason,
         "update_response": update_response,
         "update_error": update_error,

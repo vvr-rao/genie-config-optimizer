@@ -27,10 +27,25 @@ _CONFIRM_MESSAGE = (
 
 
 def _confirm_apply() -> bool:
-    """Strict prompt: returns True only if the user enters exactly 'Y'."""
+    """Strict prompt: returns True only if the user enters exactly 'Y'.
+
+    Reads from /dev/tty directly so the prompt blocks for real terminal
+    input regardless of how sys.stdin is wired (some launchers and
+    IDE-integrated terminals leave sys.stdin closed or redirected, which
+    causes the bare input() form to raise EOFError without ever waiting).
+    Fails safe (declines) only when no controlling terminal exists.
+    """
+    sys.stdout.write(_CONFIRM_MESSAGE)
+    sys.stdout.flush()
     try:
-        answer = input(_CONFIRM_MESSAGE)
-    except EOFError:
+        tty = open("/dev/tty", "r")
+    except OSError:
+        return False
+    try:
+        answer = tty.readline()
+    finally:
+        tty.close()
+    if not answer:
         return False
     return answer.strip() == "Y"
 

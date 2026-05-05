@@ -56,7 +56,13 @@ def apply_patch(serialized_space: dict[str, Any], patch: dict[str, Any]) -> dict
 
 
 def _finalize_sort(space: dict) -> None:
-    """The API requires id-keyed arrays to be sorted by id. Apply that here."""
+    """The Databricks export-proto validator requires:
+      - instructions.text_instructions[]      sorted by id
+      - instructions.example_question_sqls[]  sorted by id
+      - config.sample_questions[]             sorted by id
+      - each table's column_configs[]         sorted by column_name
+    Apply all four invariants here so callers don't have to.
+    """
     inst = space.get("instructions")
     if isinstance(inst, dict):
         for key in ("text_instructions", "example_question_sqls"):
@@ -68,6 +74,18 @@ def _finalize_sort(space: dict) -> None:
         arr = cfg.get("sample_questions")
         if isinstance(arr, list):
             arr.sort(key=lambda x: x.get("id", "") if isinstance(x, dict) else "")
+    ds = space.get("data_sources")
+    if isinstance(ds, dict):
+        tables = ds.get("tables")
+        if isinstance(tables, list):
+            for t in tables:
+                if not isinstance(t, dict):
+                    continue
+                cc = t.get("column_configs")
+                if isinstance(cc, list):
+                    cc.sort(
+                        key=lambda c: c.get("column_name", "") if isinstance(c, dict) else ""
+                    )
 
 
 def _ensure(d: dict, key: str, default):

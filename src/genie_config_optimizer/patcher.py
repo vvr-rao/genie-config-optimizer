@@ -5,7 +5,7 @@ Targets the Databricks Genie space schema version 2, which uses these paths:
     space.instructions.text_instructions[]       {id, content: list[str]}
     space.instructions.example_question_sqls[]   {id, question, sql, ...}
     space.config.sample_questions[]              {id, question: list[str]}
-    space.data_sources.tables[].description      str (optional on each table)
+    space.data_sources.tables[].description      list[str] (optional on each table)
     space.data_sources.tables[].column_configs[] {column_name, description: list[str], ...}
 
 The schema has no first-class joins/relationships category. Claude is instructed
@@ -143,7 +143,9 @@ def _set_table_descriptions(space: dict, table_descs: dict[str, str]) -> None:
             target = {"identifier": identifier}
             tables.append(target)
             by_id[identifier] = target
-        target["description"] = description
+        # Schema requires description to be a list[str], not a single string.
+        # Violation: "Expected an array for description but found <str>".
+        target["description"] = [description]
 
 
 def _set_column_descriptions(

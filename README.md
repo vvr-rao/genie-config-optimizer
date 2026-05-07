@@ -340,3 +340,7 @@ A small [Makefile](Makefile) wraps the common commands:
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE).
+
+---
+
+> **WARNING: PROCEED WITH CAUTION. This WILL overwrite your Genie Space Config.**

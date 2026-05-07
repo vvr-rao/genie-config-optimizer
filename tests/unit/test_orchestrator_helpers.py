@@ -17,6 +17,7 @@ from genie_config_optimizer.databricks_client import AskResult
 from genie_config_optimizer.orchestrator import (
     _ask_result_for_judge,
     _confirm_apply,
+    _ConfirmOutcome,
     _format_verdict_counts,
     _tally_verdicts,
     _trim_rows,
@@ -153,34 +154,48 @@ def _patch_open_for_tty(monkeypatch, tty_response: str | None, raise_oserror: bo
     monkeypatch.setattr(builtins, "open", fake_open)
 
 
-def test_confirm_apply_returns_true_on_uppercase_Y(monkeypatch, capsys):
+def test_confirm_apply_returns_confirmed_on_uppercase_Y(monkeypatch, capsys):
     _patch_open_for_tty(monkeypatch, "Y\n")
-    assert _confirm_apply() is True
+    assert _confirm_apply() == _ConfirmOutcome.CONFIRMED
 
 
-def test_confirm_apply_rejects_lowercase_y(monkeypatch, capsys):
+def test_confirm_apply_declines_lowercase_y(monkeypatch, capsys):
     _patch_open_for_tty(monkeypatch, "y\n")
-    assert _confirm_apply() is False
+    assert _confirm_apply() == _ConfirmOutcome.DECLINED
 
 
-def test_confirm_apply_rejects_n(monkeypatch, capsys):
+def test_confirm_apply_declines_n(monkeypatch, capsys):
     _patch_open_for_tty(monkeypatch, "n\n")
-    assert _confirm_apply() is False
+    assert _confirm_apply() == _ConfirmOutcome.DECLINED
 
 
-def test_confirm_apply_rejects_blank(monkeypatch, capsys):
+def test_confirm_apply_declines_blank(monkeypatch, capsys):
     _patch_open_for_tty(monkeypatch, "\n")
-    assert _confirm_apply() is False
+    assert _confirm_apply() == _ConfirmOutcome.DECLINED
 
 
-def test_confirm_apply_handles_eof(monkeypatch, capsys):
+def test_confirm_apply_returns_no_terminal_on_eof(monkeypatch, capsys):
     _patch_open_for_tty(monkeypatch, None)
-    assert _confirm_apply() is False
+    assert _confirm_apply() == _ConfirmOutcome.NO_TERMINAL
 
 
-def test_confirm_apply_fails_safe_when_no_tty(monkeypatch, capsys):
+def test_confirm_apply_returns_no_terminal_when_tty_unavailable(monkeypatch, capsys):
     _patch_open_for_tty(monkeypatch, "", raise_oserror=True)
-    assert _confirm_apply() is False
+    assert _confirm_apply() == _ConfirmOutcome.NO_TERMINAL
+
+
+def test_confirm_apply_short_circuits_on_assume_yes(monkeypatch, capsys):
+    calls: list[str] = []
+
+    def fake_open(path, *args, **kwargs):
+        calls.append(path)
+        raise AssertionError(f"open() should not be called when assume_yes=True (got {path!r})")
+
+    monkeypatch.setattr(builtins, "open", fake_open)
+    assert _confirm_apply(assume_yes=True) == _ConfirmOutcome.CONFIRMED
+    assert calls == []
+    captured = capsys.readouterr()
+    assert "WARNING" not in captured.out
 
 
 def test_confirm_apply_prints_warning_message(monkeypatch, capsys):

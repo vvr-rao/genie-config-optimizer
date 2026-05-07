@@ -57,6 +57,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip the PATCH /spaces/{id} call. Still writes before.json/after.json/meta.json/summary.md.",
     )
     p_run.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip the apply-time confirmation prompt and proceed with the PATCH "
+        "(use for non-interactive runs; ignored by --dry-run and --rollback).",
+    )
+    p_run.add_argument(
         "--env",
         default=".env",
         help="Path to the .env file (default: ./.env).",
@@ -97,6 +103,7 @@ def main(argv: list[str] | None = None) -> int:
             archive_dir=args.archive_dir,
             limit=args.limit,
             dry_run=args.dry_run,
+            assume_yes=args.yes,
         )
 
     parser.error(f"Unknown command: {args.cmd}")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from dataclasses import asdict
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -25,25 +26,33 @@ _CONFIRM_MESSAGE = (
 )
 
 
-def _confirm_apply() -> bool:
-    """Strict prompt: returns True only if the user enters exactly 'Y'.
+class _ConfirmOutcome(str, Enum):
+    CONFIRMED = "confirmed"
+    DECLINED = "declined"
+    NO_TERMINAL = "no_terminal"
+
+
+def _confirm_apply(assume_yes: bool = False) -> _ConfirmOutcome:
+    """Strict confirm: CONFIRMED only on exact 'Y', or when assume_yes=True.
 
     Reads from /dev/tty directly so the prompt blocks for real terminal
-    input regardless of how sys.stdin is wired (some launchers and
-    IDE-integrated terminals leave sys.stdin closed or redirected, which
-    causes the bare input() form to raise EOFError without ever waiting).
-    Fails safe (declines) only when no controlling terminal exists.
+    input regardless of how sys.stdin is wired. Returns NO_TERMINAL (not
+    DECLINED) when /dev/tty cannot be opened, or when it opens but
+    readline() returns EOF immediately — the caller treats that as a
+    hard error rather than a silent decline.
     """
+    if assume_yes:
+        return _ConfirmOutcome.CONFIRMED
     sys.stdout.write(_CONFIRM_MESSAGE)
     sys.stdout.flush()
     try:
         with open("/dev/tty") as tty:
             answer = tty.readline()
     except OSError:
-        return False
+        return _ConfirmOutcome.NO_TERMINAL
     if not answer:
-        return False
-    return answer.strip() == "Y"
+        return _ConfirmOutcome.NO_TERMINAL
+    return _ConfirmOutcome.CONFIRMED if answer.strip() == "Y" else _ConfirmOutcome.DECLINED
 
 
 def _tally_verdicts(verdicts: list) -> dict[str, Any]:
@@ -110,6 +119,7 @@ def run(
     archive_dir: str = "archive",
     limit: int | None = None,
     dry_run: bool = False,
+    assume_yes: bool = False,
 ) -> int:
     space_id = space_id_override or config.genie_space_id
     if not space_id:
@@ -247,18 +257,33 @@ def run(
     elif new_space == serialized_space:
         update_skipped_reason = "no_changes_proposed"
         print("No changes proposed. Skipping PATCH.")
-    elif not _confirm_apply():
-        update_skipped_reason = "user_declined"
-        print("User declined. Skipping PATCH.")
     else:
-        print("Applying patch via PATCH /spaces/{id}...")
-        try:
-            body = {"serialized_space": json.dumps(new_space)}
-            update_response = genie.update_space(space_id, body)
-            print("  -> update OK")
-        except GenieAPIError as e:
-            update_error = str(e)
-            print(f"  ERROR applying update: {update_error}", file=sys.stderr)
+        outcome = _confirm_apply(assume_yes=assume_yes)
+        if outcome == _ConfirmOutcome.NO_TERMINAL:
+            print(
+                "\nERROR: cannot prompt for confirmation — no interactive "
+                "terminal is available (/dev/tty could not be opened, or "
+                "returned EOF immediately).\n"
+                "  Re-run from an interactive terminal, or pass --yes to "
+                "confirm non-interactively.\n"
+                f"  (Diagnostics: stdin.isatty={sys.stdin.isatty()}, "
+                f"stdout.isatty={sys.stdout.isatty()})",
+                file=sys.stderr,
+            )
+            update_skipped_reason = "no_terminal"
+            update_error = "no interactive terminal available for confirmation prompt"
+        elif outcome == _ConfirmOutcome.DECLINED:
+            update_skipped_reason = "user_declined"
+            print("User declined. Skipping PATCH.")
+        else:
+            print("Applying patch via PATCH /spaces/{id}...")
+            try:
+                body = {"serialized_space": json.dumps(new_space)}
+                update_response = genie.update_space(space_id, body)
+                print("  -> update OK")
+            except GenieAPIError as e:
+                update_error = str(e)
+                print(f"  ERROR applying update: {update_error}", file=sys.stderr)
 
     meta = {
         **interim_meta,

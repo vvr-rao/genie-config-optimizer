@@ -35,7 +35,7 @@ The v2 schema has no first-class joins/relationships category, so join knowledge
 ## Setup
 
 ```bash
-git clone https://github.com/<you>/genie-config-optimizer.git
+git clone https://github.com/vvr-rao/genie-config-optimizer.git
 cd genie-config-optimizer
 uv sync
 cp .env.example .env       # then fill in real values

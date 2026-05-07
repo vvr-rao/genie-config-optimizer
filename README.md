@@ -241,6 +241,7 @@ Last verified against a live Databricks workspace on 2026-05-04. If Databricks s
 genie-config-optimizer/
 ├── pyproject.toml
 ├── README.md
+├── Makefile                       # `make help` to list targets
 ├── .env.example                  # template (committed)
 ├── .config.example               # template (committed)
 ├── .gitignore                    # excludes .env, .config, optimizer_runs/*/, .venv, etc.
@@ -312,6 +313,23 @@ uv run ruff format --check .
 ```
 
 Active rule set: `E` (pycodestyle), `F` (pyflakes), `I` (import sorting), `UP` (pyupgrade), `B` (bugbear), `SIM` (simplify), `C4` (comprehensions), `RUF` (ruff-specific). Line length is 100.
+
+### Makefile shortcuts
+
+A small [Makefile](Makefile) wraps the common commands:
+
+| Target | What it runs |
+|---|---|
+| `make test` | unit tests only (skips live integration tests) |
+| `make test-live` | unit + live integration tests (`pytest --runlive`) |
+| `make lint` | `ruff check .` |
+| `make lint-fix` | `ruff check --fix .` |
+| `make format` | `ruff format .` |
+| `make format-check` | `ruff format --check .` (no writes) |
+| `make coverage` | unit tests + line-coverage report |
+| `make ci` | the full local gauntlet: lint + format-check + test |
+
+`make` with no args prints this list. The Makefile is a manual task runner — it does not auto-run on `git commit`. If you want checks to fire on commit, add a `pre-commit` config later.
 
 ---
 

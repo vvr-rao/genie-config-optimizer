@@ -21,7 +21,6 @@ import copy
 import secrets
 from typing import Any
 
-
 SUPPORTED_KEYS = frozenset(
     {
         "instructions",
@@ -83,9 +82,7 @@ def _finalize_sort(space: dict) -> None:
                     continue
                 cc = t.get("column_configs")
                 if isinstance(cc, list):
-                    cc.sort(
-                        key=lambda c: c.get("column_name", "") if isinstance(c, dict) else ""
-                    )
+                    cc.sort(key=lambda c: c.get("column_name", "") if isinstance(c, dict) else "")
 
 
 def _ensure(d: dict, key: str, default):
@@ -148,9 +145,7 @@ def _set_table_descriptions(space: dict, table_descs: dict[str, str]) -> None:
         target["description"] = [description]
 
 
-def _set_column_descriptions(
-    space: dict, col_descs: dict[str, dict[str, str]]
-) -> None:
+def _set_column_descriptions(space: dict, col_descs: dict[str, dict[str, str]]) -> None:
     ds = _ensure(space, "data_sources", {})
     tables = _ensure(ds, "tables", [])
     by_id = {t.get("identifier"): t for t in tables if isinstance(t, dict)}
@@ -163,9 +158,7 @@ def _set_column_descriptions(
             tables.append(target)
             by_id[identifier] = target
         configs = _ensure(target, "column_configs", [])
-        by_col = {
-            c.get("column_name"): c for c in configs if isinstance(c, dict)
-        }
+        by_col = {c.get("column_name"): c for c in configs if isinstance(c, dict)}
         for col_name, desc in cols.items():
             if not isinstance(col_name, str) or not isinstance(desc, str):
                 continue

@@ -7,7 +7,6 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-
 DEFAULT_ENV_PATH = ".env"
 DEFAULT_CONFIG_PATH = ".config"
 
@@ -51,7 +50,7 @@ def load_config(
         workspace_id = cp["databricks"]["workspace_id"].strip()
         genie_space_id = cp["databricks"]["genie_space_id"].strip()
     except KeyError as e:
-        raise ConfigError(f"Missing key in [databricks] section of {config_path}: {e}")
+        raise ConfigError(f"Missing key in [databricks] section of {config_path}: {e}") from e
 
     model = "claude-sonnet-4-6"
     if cp.has_section("anthropic") and cp.has_option("anthropic", "model"):
@@ -66,14 +65,10 @@ def load_config(
     if not api_key:
         missing.append("ANTHROPIC_API_KEY")
     if missing:
-        raise ConfigError(
-            f"Missing in {env_path}: {', '.join(missing)}"
-        )
+        raise ConfigError(f"Missing in {env_path}: {', '.join(missing)}")
 
     if not host.startswith("http"):
-        raise ConfigError(
-            f"databricks.host must include https:// (got {host!r})"
-        )
+        raise ConfigError(f"databricks.host must include https:// (got {host!r})")
 
     return AppConfig(
         databricks_host=host.rstrip("/"),

@@ -15,7 +15,6 @@ from .csv_loader import EvalRow, load_csv
 from .databricks_client import AskResult, GenieAPIError, GenieClient
 from .patcher import apply_patch, patch_summary
 
-
 _KNOWN_VERDICTS = ("pass", "partial", "fail")
 
 
@@ -38,20 +37,17 @@ def _confirm_apply() -> bool:
     sys.stdout.write(_CONFIRM_MESSAGE)
     sys.stdout.flush()
     try:
-        tty = open("/dev/tty", "r")
+        with open("/dev/tty") as tty:
+            answer = tty.readline()
     except OSError:
         return False
-    try:
-        answer = tty.readline()
-    finally:
-        tty.close()
     if not answer:
         return False
     return answer.strip() == "Y"
 
 
 def _tally_verdicts(verdicts: list) -> dict[str, Any]:
-    counts = {v: 0 for v in _KNOWN_VERDICTS}
+    counts = dict.fromkeys(_KNOWN_VERDICTS, 0)
     other = 0
     for v in verdicts:
         key = (getattr(v, "verdict", "") or "").strip().lower()
@@ -117,7 +113,9 @@ def run(
 ) -> int:
     space_id = space_id_override or config.genie_space_id
     if not space_id:
-        print("ERROR: no Genie space ID provided (set in .config or pass --space-id)", file=sys.stderr)
+        print(
+            "ERROR: no Genie space ID provided (set in .config or pass --space-id)", file=sys.stderr
+        )
         return 2
 
     eval_rows = load_csv(csv_path)
@@ -165,9 +163,7 @@ def run(
                 ar = genie.ask(
                     space_id,
                     row.question,
-                    on_poll=lambda status, _q=q_short: pbar.set_postfix(
-                        {"state": status, "q": _q}
-                    ),
+                    on_poll=lambda status, _q=q_short: pbar.set_postfix({"state": status, "q": _q}),
                 )
                 tqdm.write(
                     f"[{i}/{len(eval_rows)}] {row.question[:80]!r}  "
@@ -176,7 +172,7 @@ def run(
             except GenieAPIError as e:
                 error = str(e)
                 tqdm.write(f"[{i}/{len(eval_rows)}] ERROR: {error}", file=sys.stderr)
-            except Exception as e:  # noqa: BLE001 — orchestrator logs and continues
+            except Exception as e:
                 error = f"{type(e).__name__}: {e}"
                 tqdm.write(f"[{i}/{len(eval_rows)}] ERROR: {error}", file=sys.stderr)
 

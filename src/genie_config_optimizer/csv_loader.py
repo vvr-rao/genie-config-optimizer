@@ -4,7 +4,6 @@ import csv
 from dataclasses import dataclass
 from pathlib import Path
 
-
 REQUIRED_COLUMNS = ("question", "tables", "expected_answer")
 
 
@@ -38,7 +37,7 @@ def load_csv(path: str | Path) -> list[EvalRow]:
             )
 
         # Map normalized -> original column name so we can read by case-insensitive key.
-        col_map = {n: orig for n, orig in zip(normalized, reader.fieldnames)}
+        col_map = dict(zip(normalized, reader.fieldnames, strict=True))
 
         rows: list[EvalRow] = []
         for i, raw in enumerate(reader, start=2):

@@ -20,7 +20,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    p_run = sub.add_parser("run", help="Run the optimizer over a CSV, or roll back to a prior snapshot.")
+    p_run = sub.add_parser(
+        "run", help="Run the optimizer over a CSV, or roll back to a prior snapshot."
+    )
     mode = p_run.add_mutually_exclusive_group(required=True)
     mode.add_argument("--csv", help="Path to the evaluation CSV (normal optimization run).")
     mode.add_argument(

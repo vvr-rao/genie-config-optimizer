@@ -8,7 +8,6 @@ import anthropic
 
 from .prompts import SYSTEM_PROMPT, build_user_message
 
-
 DEFAULT_MODEL = "claude-sonnet-4-6"
 DEFAULT_MAX_TOKENS = 16000
 
@@ -86,7 +85,7 @@ class Judge:
         try:
             parsed = json.loads(text)
         except json.JSONDecodeError as e:
-            raise JudgeError(f"Could not parse JSON from Claude: {e}\n---\n{text[:1000]}")
+            raise JudgeError(f"Could not parse JSON from Claude: {e}\n---\n{text[:1000]}") from e
 
         verdicts_raw = parsed.get("verdicts", [])
         verdicts = [
@@ -105,9 +104,7 @@ class Judge:
             "cache_creation_input_tokens": getattr(
                 response.usage, "cache_creation_input_tokens", 0
             ),
-            "cache_read_input_tokens": getattr(
-                response.usage, "cache_read_input_tokens", 0
-            ),
+            "cache_read_input_tokens": getattr(response.usage, "cache_read_input_tokens", 0),
         }
 
         return BatchResult(

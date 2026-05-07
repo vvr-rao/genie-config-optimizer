@@ -10,7 +10,7 @@ class Archive:
     def __init__(self, root: str | Path = "archive"):
         self.root = Path(root)
 
-    def new_run(self) -> "RunDir":
+    def new_run(self) -> RunDir:
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
         path = self.root / ts
         path.mkdir(parents=True, exist_ok=False)

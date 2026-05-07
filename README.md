@@ -131,14 +131,6 @@ uv run genie-config-optimizer run --rollback optimizer_runs/2026-05-03T19-07-51Z
 
 The Update Space call uses `PATCH /api/2.0/genie/spaces/{space_id}` with body `{"serialized_space": "<json>"}` — only the field being changed. Earlier versions used `PUT`, which Databricks does not expose for Genie spaces.
 
-Before the PATCH actually fires, the run writes `summary.md` and prompts:
-
-```
-*** WARNING *** - you are about to overwrite the configuration in your Genie space. Please review the Summary of the proposed changes before proceeding. Do you want to proceed (Y/n)?
-```
-
-Only an exact `Y` proceeds. Lowercase `y`, blank input, or any other response declines and skips the PATCH (run exits cleanly with `update_skipped_reason: "user_declined"` recorded in `meta.json`). `--dry-run` short-circuits before this prompt and never asks. `--rollback` is intentionally not gated, since rollback is itself the recovery action.
-
 After judging, the run prints a verdict breakdown line so you can see at a glance how Genie did:
 
 ```
@@ -202,14 +194,11 @@ flowchart TD
     capture --> claude["Anthropic API — single batched call<br/>Claude judges every row<br/>+ proposes ONE consolidated patch"]
     claude --> apply[apply_patch locally<br/>5 metadata categories]
     apply --> after[(after.json archived)]
-    apply --> summaryearly[(summary.md written<br/>before user confirmation)]
 
-    summaryearly --> confirm{Y/n prompt:<br/>review summary,<br/>confirm overwrite}
-    confirm -- Y --> patch["PATCH /api/2.0/genie/spaces/{id}<br/>body: serialized_space JSON<br/>one update, after the full batch"]
-    confirm -- anything else --> declined[user_declined<br/>PATCH skipped]
+    apply --> patch["PATCH /api/2.0/genie/spaces/{id}<br/>body: serialized_space JSON<br/>one update, after the full batch"]
     patch --> done([Genie space updated])
 
-    claude --> meta[(meta.json + summary.md<br/>final outcome recorded)]
+    claude --> meta[(meta.json + summary.md<br/>verdicts, patch, token usage)]
 ```
 
 Step by step:
@@ -220,12 +209,11 @@ Step by step:
    - Poll messages every 5 seconds (max 10 min per question) until status is `COMPLETED` / `FAILED` / `CANCELLED`.
    - `GET attachment query-result` — capture SQL + result rows.
 3. Single Anthropic call: Claude judges all rows AND proposes one consolidated patch.
-4. `apply_patch` → new `serialized_space`. Write `summary.md` so the operator can review.
-5. Y/n confirmation prompt. Only an exact `Y` proceeds. `--dry-run` short-circuits before this step.
-6. `PATCH /spaces/{id}` — one update.
-7. Rewrite `optimizer_runs/<ISO-timestamp>/{meta.json, summary.md}` with the final outcome.
+4. `apply_patch` → new `serialized_space`.
+5. `PATCH /spaces/{id}` — one update, skipped if `--dry-run`.
+6. Write `optimizer_runs/<ISO-timestamp>/{before.json, after.json, meta.json, summary.md}`.
 
-The Genie space is **read** at step 1 and **written** once at step 6. No mutation between rows. Each row is independent, so question N's answer is not influenced by question N-1.
+The Genie space is **read** at step 1 and **written** once at step 5. No mutation between rows. Each row is independent, so question N's answer is not influenced by question N-1.
 
 ---
 
@@ -253,12 +241,15 @@ Last verified against a live Databricks workspace on 2026-05-04. If Databricks s
 genie-config-optimizer/
 ├── pyproject.toml
 ├── README.md
-├── LICENSE
 ├── .env.example                  # template (committed)
 ├── .config.example               # template (committed)
 ├── .gitignore                    # excludes .env, .config, optimizer_runs/*/, .venv, etc.
 ├── example_csv/                  # sample CSVs (committed)
 ├── optimizer_runs/               # per-run snapshots (notes.md committed; subfolders gitignored)
+├── tests/
+│   ├── conftest.py               # shared fixtures + the --runlive flag
+│   ├── unit/                     # fast, no network — pin every v2 schema invariant
+│   └── integration/              # opt-in live API tests against Databricks + Anthropic
 └── src/genie_config_optimizer/
     ├── __init__.py
     ├── __main__.py               # `python -m genie_config_optimizer`
@@ -272,6 +263,55 @@ genie-config-optimizer/
     ├── archiver.py               # writes optimizer_runs/<timestamp>/{before,after,meta}.json + summary.md
     └── orchestrator.py           # end-to-end run
 ```
+
+---
+
+## Tests and linting
+
+Dev dependencies (`pytest`, `ruff`) install automatically with `uv sync`.
+
+### Tests
+
+```bash
+# Fast unit tests — no network, no API keys needed (~2s)
+uv run pytest
+
+# Verbose mode
+uv run pytest -v
+
+# Run a single test file
+uv run pytest tests/unit/test_patcher.py
+
+# Live integration tests — opt in with --runlive. These hit the real
+# Databricks + Anthropic APIs in --dry-run mode (no PATCH is applied);
+# they require a working .env and .config at the repo root.
+uv run pytest --runlive
+
+# Or only the integration suite
+uv run pytest --runlive -m integration
+```
+
+The unit tests pin every v2 `serialized_space` constraint we have learned the hard way (single-entry `text_instructions`, `column_name` field, sort-by-id, sort-by-`column_name`, table description as `list[str]`, and so on). Failures in `tests/unit/test_patcher.py` are load-bearing: if any pass changes meaning, the live PATCH will start returning 400s.
+
+### Linting and formatting
+
+[ruff](https://docs.astral.sh/ruff/) replaces flake8 + isort + pyupgrade + black in one fast tool. Configuration lives in `pyproject.toml`.
+
+```bash
+# Lint
+uv run ruff check .
+
+# Lint + auto-fix what's safely fixable
+uv run ruff check --fix .
+
+# Format the whole project
+uv run ruff format .
+
+# Or check formatting without writing changes
+uv run ruff format --check .
+```
+
+Active rule set: `E` (pycodestyle), `F` (pyflakes), `I` (import sorting), `UP` (pyupgrade), `B` (bugbear), `SIM` (simplify), `C4` (comprehensions), `RUF` (ruff-specific). Line length is 100.
 
 ---
 

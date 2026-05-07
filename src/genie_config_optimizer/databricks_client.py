@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 import requests
-
 
 TERMINAL_STATUSES = {"COMPLETED", "FAILED", "CANCELLED", "QUERY_RESULT_EXPIRED"}
 
@@ -45,9 +45,7 @@ class GenieClient:
     def _request(self, method: str, path: str, **kwargs) -> dict[str, Any]:
         resp = self.session.request(method, self._url(path), timeout=self.timeout, **kwargs)
         if not resp.ok:
-            raise GenieAPIError(
-                f"{method} {path} -> {resp.status_code}: {resp.text[:500]}"
-            )
+            raise GenieAPIError(f"{method} {path} -> {resp.status_code}: {resp.text[:500]}")
         if resp.status_code == 204 or not resp.content:
             return {}
         return resp.json()
@@ -142,11 +140,7 @@ class GenieClient:
                             space_id, conversation_id, message_id, att["attachment_id"]
                         )
                         sr = result.get("statement_response", {}) or {}
-                        data_array = (
-                            (sr.get("result", {}) or {}).get("data_array")
-                            if sr
-                            else None
-                        )
+                        data_array = (sr.get("result", {}) or {}).get("data_array") if sr else None
                         if data_array is not None:
                             rows = data_array
                     except GenieAPIError:

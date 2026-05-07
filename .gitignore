@@ -7,4 +7,7 @@ __pycache__/
 .uv-cache/
 *.pyc
 .pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
 CLAUDE.local.md

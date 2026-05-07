@@ -1,5 +1,10 @@
 # genie-config-optimizer
 
+[![CI](https://github.com/vvr-rao/genie-config-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/vvr-rao/genie-config-optimizer/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/vvr-rao/genie-config-optimizer/branch/main/graph/badge.svg)](https://codecov.io/gh/vvr-rao/genie-config-optimizer)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
+
 A Python CLI tool that programmatically optimizes a Databricks Genie space.
 
 You give it a CSV of evaluation questions with the table they should hit and a plain-English description of the expected answer. It runs every question against the live Genie space (one Conversation API call per row), then sends all the answers in one batch to Claude. Claude judges each answer and proposes a single consolidated patch to the space's metadata. The patch is auto-applied via the Update Space API, and a snapshot of the space before and after is archived locally so any change is recoverable.
@@ -241,7 +246,6 @@ Last verified against a live Databricks workspace on 2026-05-04. If Databricks s
 genie-config-optimizer/
 ├── pyproject.toml
 ├── README.md
-├── Makefile                       # `make help` to list targets
 ├── .env.example                  # template (committed)
 ├── .config.example               # template (committed)
 ├── .gitignore                    # excludes .env, .config, optimizer_runs/*/, .venv, etc.

@@ -55,3 +55,11 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["B011"]  # asserts in tests are fine
+
+[tool.coverage.run]
+source = ["genie_config_optimizer"]
+branch = false
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false

@@ -1,4 +1,4 @@
-# genie-config-optimizer
+# (Databricks) Genie Config Optimizer
 
 [![CI](https://github.com/vvr-rao/genie-config-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/vvr-rao/genie-config-optimizer/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/vvr-rao/genie-config-optimizer/branch/main/graph/badge.svg)](https://codecov.io/gh/vvr-rao/genie-config-optimizer)
